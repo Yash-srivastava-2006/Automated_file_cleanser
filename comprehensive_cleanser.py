@@ -1,0 +1,654 @@
+import cv2
+import spacy
+import pytesseract
+import pandas as pd
+import re
+import os
+import fitz
+import logging
+from pathlib import Path
+from datetime import datetime
+from pptx import Presentation
+from typing import List, Dict, Optional, Tuple
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
+from collections import defaultdict
+import uuid
+from PIL import Image, ImageDraw
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+
+class HybridPIIRedactor:
+    """Production-grade PII redaction system"""
+
+    SUPPORTED_ENTITIES = {
+        'PERSON', 'EMAIL_ADDRESS', 'PHONE_NUMBER', 'IP_ADDRESS',
+        'CREDIT_CARD', 'LOCATION', 'DATE_TIME', 'CRYPTO'
+    }
+
+    STRUCTURAL_PATTERNS = {
+        'NAME', 'DATE', 'TIME', 'SIGN', 'INITIAL', 'INITIALS',
+        'REASON', 'VISIT', 'PURPOSE', 'VISITOR', 'LOG', 'BOOK',
+        'MONTH', 'YEAR', 'DAY', 'IN', 'OUT', 'TYPE', 'METHOD',
+        'QUANTITY', 'DESTRUCTION', 'CERTIFICATE', 'SECURITY', 'OFFICER',
+        'REASON FOR VISIT', 'TIME IN', 'TIME OUT', 'SIGN / INITIALS',
+        'FULL NAME', 'EMAIL', 'REVIEWED DATE', 'CHANGES MADE',
+        'REVISION', 'CHANGES MADE (IF ANY)'  # Added for PPTX tables
+    }
+
+    MONTH_NAMES = {
+        'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+        'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'
+    }
+
+    # FIXED: Comprehensive IP pattern for all formats
+    IP_PATTERN = re.compile(
+        r'(?:rtsp://|http://|https://|ftp://)?'  # Optional protocol prefix (rtsp://)
+        r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'  # First 3 octets
+        r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)'  # Last octet
+        r'(?::\d+|:RTSP|:rtsp)?'  # Optional port or :RTSP suffix
+        r'(?:/\d{1,2})?',  # Optional CIDR notation /0-32
+        re.IGNORECASE
+    )
+
+    def __init__(self, use_spacy: bool = True, use_presidio: bool = True,
+                 spacy_model: str = "en_core_web_lg"):
+        logger.info("Initializing Hybrid PII Redactor...")
+
+        self.use_spacy = use_spacy
+        self.use_presidio = use_presidio
+        self.nlp = None
+        self.analyzer = None
+        self.anonymizer = None
+
+        if self.use_spacy:
+            try:
+                self.nlp = spacy.load(spacy_model)
+                logger.info(f"✓ spaCy model '{spacy_model}' loaded")
+            except Exception as e:
+                logger.warning(f"✗ spaCy failed to load: {e}")
+                self.nlp = None
+                self.use_spacy = False
+
+        if self.use_presidio:
+            try:
+                self.analyzer = AnalyzerEngine()
+                self.anonymizer = AnonymizerEngine()
+                logger.info("✓ Presidio loaded")
+            except Exception as e:
+                logger.error(f"✗ Presidio failed to load: {e}")
+                self.use_presidio = False
+
+        if not self.use_spacy and not self.use_presidio:
+            raise RuntimeError("Neither spaCy nor Presidio could be loaded.")
+
+        self.stats = defaultdict(int)
+        self.stats['files_processed'] = 0
+        self.stats['successful'] = 0
+        self.stats['failed'] = 0
+
+        logger.info("✓ System ready\n")
+
+    def is_structural_text(self, text: str) -> bool:
+        """Check if text is a structural label"""
+        if not text or len(text.strip()) <= 1:
+            return False
+
+        text_upper = text.strip().upper()
+        return text_upper in self.STRUCTURAL_PATTERNS or text_upper in self.MONTH_NAMES
+
+    def is_valid_person_name(self, text: str) -> bool:
+        """Validate if detected PERSON is likely a real name"""
+        if not text or len(text.strip()) <= 1:
+            return False
+
+        text_clean = text.strip()
+
+        if self.is_structural_text(text_clean):
+            return False
+
+        if len(text_clean) == 1:
+            return False
+
+        if text_clean.isdigit():
+            return False
+
+        false_positives = {'INC', 'LLC', 'LTD', 'CORP', 'CO', 'AND', 'THE', 'OF', 'CADENCE'}
+        if text_clean.upper() in false_positives:
+            return False
+
+        return True
+
+    def extract_pii(self, text: str) -> List[Dict]:
+        """Extract PII with FIXED IP detection"""
+        if not text or not text.strip():
+            return []
+
+        pii_items = []
+        seen = set()
+
+        # FIXED: Aggressive IP detection (including RTSP)
+        for match in self.IP_PATTERN.finditer(text):
+            ip_text = match.group()
+            key = (match.start(), match.end())
+            if key not in seen:
+                pii_items.append({
+                    'text': ip_text,
+                    'type': 'IP_ADDRESS',
+                    'start': match.start(),
+                    'end': match.end()
+                })
+                seen.add(key)
+
+        # spaCy for PERSON
+        if self.use_spacy and self.nlp:
+            try:
+                doc = self.nlp(text)
+                for ent in doc.ents:
+                    if ent.label_ == 'PERSON' and self.is_valid_person_name(ent.text):
+                        key = (ent.start_char, ent.end_char)
+                        if key not in seen:
+                            pii_items.append({
+                                'text': ent.text,
+                                'type': 'PERSON',
+                                'start': ent.start_char,
+                                'end': ent.end_char
+                            })
+                            seen.add(key)
+            except Exception as e:
+                logger.warning(f"spaCy error: {e}")
+
+        # Presidio for EMAIL, PHONE, etc.
+        if self.use_presidio and self.analyzer:
+            try:
+                entities_to_check = list(self.SUPPORTED_ENTITIES)
+                if self.use_spacy:
+                    entities_to_check.remove('PERSON')
+
+                presidio_results = self.analyzer.analyze(
+                    text=text,
+                    language='en',
+                    entities=entities_to_check
+                )
+
+                for result in presidio_results:
+                    key = (result.start, result.end)
+                    if key not in seen:
+                        pii_items.append({
+                            'text': text[result.start:result.end],
+                            'type': result.entity_type,
+                            'start': result.start,
+                            'end': result.end
+                        })
+                        seen.add(key)
+            except Exception as e:
+                logger.warning(f"Presidio error: {e}")
+
+        return pii_items
+
+    def update_stats(self, pii_type: str):
+        """Update statistics"""
+        stat_key = f"{pii_type.lower()}_redacted"
+        self.stats[stat_key] += 1
+
+    def redact_image(self, image_path: str, output_path: str) -> Dict:
+        """Redact PII from images"""
+        logger.info(f"Processing image: {image_path}")
+        try:
+            img = cv2.imread(image_path)
+            if img is None:
+                raise ValueError("Could not read image")
+
+            original = img.copy()
+
+            ocr_data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+
+            words, positions = [], []
+            for i, word in enumerate(ocr_data.get("text", [])):
+                try:
+                    conf = int(ocr_data['conf'][i]) if ocr_data['conf'][i] != '-1' else 0
+                    if isinstance(word, str) and word.strip() and conf > 40:
+                        words.append(word.strip())
+                        positions.append((
+                            int(ocr_data['left'][i]),
+                            int(ocr_data['top'][i]),
+                            int(ocr_data['width'][i]),
+                            int(ocr_data['height'][i])
+                        ))
+                except (ValueError, KeyError):
+                    continue
+
+            ngrams = self._generate_smart_ngrams(words, positions)
+
+            redact_boxes, processed_indices, redacted_count = [], set(), 0
+
+            for ngram in sorted(ngrams, key=lambda x: len(x['text']), reverse=True):
+                if any(idx in processed_indices for idx in ngram['indices']):
+                    continue
+
+                pii_items = self.extract_pii(ngram['text'])
+                if pii_items:
+                    for pii in pii_items:
+                        logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+                        self.update_stats(pii['type'])
+                        redacted_count += 1
+
+                    redact_boxes.append(ngram['bbox'])
+                    processed_indices.update(ngram['indices'])
+
+            for (x, y, w, h) in redact_boxes:
+                cv2.rectangle(img, (x-5, y-5), (x+w+5, y+h+5), (0, 0, 0), -1)
+
+            cv2.imwrite(output_path, img)
+
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing image: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def _generate_smart_ngrams(self, words: List[str], positions: List[Tuple]) -> List[Dict]:
+        """Generate spatially adjacent ngrams"""
+        ngrams = []
+
+        for i in range(len(words)):
+            ngrams.append({
+                'text': words[i],
+                'indices': {i},
+                'bbox': positions[i]
+            })
+
+            if i < len(words) - 1:
+                x1, y1, w1, h1 = positions[i]
+                x2, y2, w2, h2 = positions[i+1]
+
+                if abs(y1 - y2) < h1 * 0.5:
+                    ngrams.append({
+                        'text': f"{words[i]} {words[i+1]}",
+                        'indices': {i, i+1},
+                        'bbox': (
+                            min(x1, x2), min(y1, y2),
+                            max(x1+w1, x2+w2) - min(x1, x2),
+                            max(y1+h1, y2+h2) - min(y1, y2)
+                        )
+                    })
+
+            if i < len(words) - 2:
+                x1, y1, w1, h1 = positions[i]
+                x2, y2, w2, h2 = positions[i+1]
+                x3, y3, w3, h3 = positions[i+2]
+
+                if abs(y1 - y2) < h1 * 0.5 and abs(y2 - y3) < h2 * 0.5:
+                    ngrams.append({
+                        'text': f"{words[i]} {words[i+1]} {words[i+2]}",
+                        'indices': {i, i+1, i+2},
+                        'bbox': (
+                            min(x1, x2, x3), min(y1, y2, y3),
+                            max(x1+w1, x2+w2, x3+w3) - min(x1, x2, x3),
+                            max(y1+h1, y2+h2, y3+h3) - min(y1, y2, y3)
+                        )
+                    })
+
+        return ngrams
+
+    def redact_pdf(self, pdf_path: str, output_path: str) -> Dict:
+        """Redact PII from PDF files"""
+        logger.info(f"Processing PDF: {pdf_path}")
+        redacted_count = 0
+
+        try:
+            doc = fitz.open(pdf_path)
+
+            for page_num, page in enumerate(doc, 1):
+                logger.info(f"  Scanning page {page_num}/{len(doc)}...")
+                text = page.get_text("text")
+
+                pii_items = self.extract_pii(text)
+
+                for pii in pii_items:
+                    areas = page.search_for(pii['text'])
+                    if areas:
+                        for area in areas:
+                            page.add_redact_annot(area, fill=(0, 0, 0))
+                        self.update_stats(pii['type'])
+                        redacted_count += 1
+                        logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+
+                page.apply_redactions()
+
+            doc.save(output_path)
+            doc.close()
+
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing PDF: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def redact_pptx(self, pptx_path: str, output_path: str) -> Dict:
+        """
+        FIXED: PowerPoint redaction with table cell handling
+        """
+        logger.info(f"Processing PPTX: {pptx_path}")
+        redacted_count = 0
+
+        try:
+            prs = Presentation(pptx_path)
+
+            for slide_num, slide in enumerate(prs.slides, 1):
+                logger.info(f"  Scanning slide {slide_num}/{len(prs.slides)}...")
+                slide_redactions = 0
+
+                for shape in slide.shapes:
+                    # Handle tables separately
+                    if shape.has_table:
+                        for row in shape.table.rows:
+                            for cell in row.cells:
+                                # Get full cell text
+                                cell_text = cell.text.strip()
+
+                                if not cell_text or self.is_structural_text(cell_text):
+                                    continue
+
+                                # Detect PII in cell
+                                pii_items = self.extract_pii(cell_text)
+
+                                if not pii_items:
+                                    continue
+
+                                # Replace PII in cell
+                                new_text = cell_text
+                                for pii in pii_items:
+                                    new_text = new_text.replace(pii['text'], f"[{pii['type']}]")
+                                    logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+                                    self.update_stats(pii['type'])
+                                    redacted_count += 1
+                                    slide_redactions += 1
+
+                                # Update cell text
+                                cell.text = new_text
+
+                    # Handle regular text frames
+                    elif hasattr(shape, "text_frame") and shape.text_frame:
+                        for paragraph in shape.text_frame.paragraphs:
+                            full_text = ''.join(run.text for run in paragraph.runs)
+
+                            if not full_text.strip():
+                                continue
+
+                            pii_items = self.extract_pii(full_text)
+
+                            if not pii_items:
+                                continue
+
+                            new_text = full_text
+                            for pii in pii_items:
+                                new_text = new_text.replace(pii['text'], f"[{pii['type']}]")
+                                logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+                                self.update_stats(pii['type'])
+                                redacted_count += 1
+                                slide_redactions += 1
+
+                            if paragraph.runs:
+                                for i in range(len(paragraph.runs) - 1, 0, -1):
+                                    paragraph._element.remove(paragraph.runs[i]._element)
+                                paragraph.runs[0].text = new_text
+                            else:
+                                paragraph.add_run().text = new_text
+
+                if slide_redactions > 0:
+                    logger.info(f"    ✓ Slide {slide_num}: {slide_redactions} items redacted")
+
+            prs.save(output_path)
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing PPTX: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
+
+    def redact_excel(self, excel_path: str, output_path: str) -> Dict:
+        """Redact PII from Excel files"""
+        logger.info(f"Processing Excel: {excel_path}")
+        redacted_count = 0
+
+        try:
+            ext = Path(excel_path).suffix.lower()
+            engine = 'openpyxl' if ext == '.xlsx' else 'xlrd'
+
+            df = pd.read_excel(excel_path, header=None, engine=engine)
+
+            def redact_cell(value):
+                nonlocal redacted_count
+
+                if pd.isna(value):
+                    return value
+
+                text = str(value).strip()
+
+                if not text or self.is_structural_text(text):
+                    return value
+
+                pii_items = self.extract_pii(text)
+
+                if not pii_items:
+                    return value
+
+                new_text = text
+                for pii in pii_items:
+                    pattern = re.escape(pii['text'])
+                    new_text = re.sub(pattern, f"[{pii['type']}]", new_text)
+                    self.update_stats(pii['type'])
+                    logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+
+                if new_text != text:
+                    redacted_count += 1
+
+                return new_text
+
+            df_redacted = df.applymap(redact_cell)
+            df_redacted.to_excel(output_path, index=False, header=False, engine='openpyxl')
+
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing Excel: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def redact_text(self, text_path: str, output_path: str) -> Dict:
+        """Redact PII from plain text files"""
+        logger.info(f"Processing text file: {text_path}")
+        redacted_count = 0
+
+        try:
+            with open(text_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text = f.read()
+
+            pii_items = self.extract_pii(text)
+
+            if not pii_items:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(text)
+                return {'success': True, 'redacted': 0}
+
+            new_text = text
+            for pii in pii_items:
+                new_text = new_text.replace(pii['text'], f"[{pii['type']}]")
+                self.update_stats(pii['type'])
+                redacted_count += 1
+                logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(new_text)
+
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing text file: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def redact_csv(self, csv_path: str, output_path: str) -> Dict:
+        """Redact PII from CSV files"""
+        logger.info(f"Processing CSV: {csv_path}")
+        redacted_count = 0
+
+        try:
+            df = pd.read_csv(csv_path)
+
+            def redact_cell(value):
+                nonlocal redacted_count
+
+                if pd.isna(value):
+                    return value
+
+                text = str(value).strip()
+
+                if not text or self.is_structural_text(text):
+                    return value
+
+                pii_items = self.extract_pii(text)
+
+                if not pii_items:
+                    return value
+
+                new_text = text
+                for pii in pii_items:
+                    new_text = new_text.replace(pii['text'], f"[{pii['type']}]")
+                    self.update_stats(pii['type'])
+                    logger.info(f"  ✓ Redacting {pii['type']}: {pii['text']}")
+
+                if new_text != text:
+                    redacted_count += 1
+
+                return new_text
+
+            df_redacted = df.applymap(redact_cell)
+            df_redacted.to_csv(output_path, index=False)
+
+            return {'success': True, 'redacted': redacted_count}
+
+        except Exception as e:
+            logger.error(f"Error processing CSV: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def process_file(self, file_path: str, output_dir: str = './redacted_files') -> Optional[str]:
+        """Process a single file for PII redaction"""
+        self.stats['files_processed'] += 1
+        logger.info(f"\n{'='*70}\nProcessing: {file_path}\n{'='*70}")
+
+        if not os.path.exists(file_path):
+            logger.error("File not found")
+            self.stats['failed'] += 1
+            return None
+
+        path_obj = Path(file_path)
+        ext = ''.join(path_obj.suffixes).lower()
+        if not ext:
+            ext = path_obj.suffix.lower()
+
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"redacted_{path_obj.name}")
+
+        handlers = {
+            '.png': self.redact_image,
+            '.jpg': self.redact_image,
+            '.jpeg': self.redact_image,
+            '.bmp': self.redact_image,
+            '.tiff': self.redact_image,
+            '.pdf': self.redact_pdf,
+            '.xlsx': self.redact_excel,
+            '.xls': self.redact_excel,
+            '.pptx': self.redact_pptx,
+            '.txt': self.redact_text,
+            '.csv': self.redact_csv
+        }
+
+        handler = handlers.get(ext)
+
+        if not handler:
+            logger.error(f"Unsupported format: {ext}")
+            self.stats['failed'] += 1
+            return None
+
+        result = handler(file_path, output_path)
+
+        if result and result.get('success'):
+            self.stats['successful'] += 1
+            logger.info(f"\n✓ SUCCESS - Redacted {result['redacted']} items")
+            logger.info(f"   Output: {output_path}\n")
+            return output_path
+        else:
+            self.stats['failed'] += 1
+            return None
+
+    def print_summary(self):
+        """Print comprehensive processing summary"""
+        logger.info(f"\n{'='*70}\nPROCESSING SUMMARY\n{'='*70}")
+
+        total_redacted = sum(v for k, v in self.stats.items() if k.endswith('_redacted'))
+
+        logger.info(f"Files Processed: {self.stats['files_processed']} "
+                   f"(✓ {self.stats['successful']}, ✗ {self.stats['failed']})")
+        logger.info(f"\nTotal PII Items Redacted: {total_redacted}")
+
+        pii_stats = {k: v for k, v in self.stats.items() if k.endswith('_redacted')}
+
+        if pii_stats:
+            logger.info("\nBreakdown by Type:")
+            for key, count in sorted(pii_stats.items(), key=lambda x: x[1], reverse=True):
+                if count > 0:
+                    pii_type = key.replace('_redacted', '').replace('_', ' ').title()
+                    logger.info(f"  - {pii_type}: {count}")
+
+        logger.info(f"{'='*70}\n")
+
+
+# Flask integration functions
+def cleanse_file_with_hybrid_redactor(input_filepath, filename, output_folder):
+    """
+    Cleanse a file using the HybridPIIRedactor and return the path to the cleansed file
+    
+    Args:
+        input_filepath (str): Path to the input file
+        filename (str): Original filename
+        output_folder (str): Folder to save the cleansed file
+        
+    Returns:
+        tuple: (cleansed_filepath, cleansed_filename) or (None, error_message)
+    """
+    try:
+        # Initialize the redactor
+        redactor = HybridPIIRedactor(use_spacy=True, use_presidio=True, spacy_model="en_core_web_lg")
+        
+        # Process the file
+        cleansed_filepath = redactor.process_file(input_filepath, output_folder)
+        
+        if cleansed_filepath:
+            # Extract just the filename part
+            cleansed_filename = os.path.basename(cleansed_filepath)
+            return cleansed_filepath, cleansed_filename
+        else:
+            return None, "Failed to cleanse file"
+            
+    except Exception as e:
+        logger.error(f"Error in cleanse_file_with_hybrid_redactor: {str(e)}")
+        return None, f"Error cleansing file: {str(e)}"
+
+
+def get_cleansing_stats():
+    """
+    Get statistics about the cleansing process
+    This would need to be implemented to track stats across multiple files
+    """
+    return {
+        "files_processed": 0,
+        "files_cleansed": 0,
+        "errors": 0
+    }

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automating File Cleansing and Analysis leveraging AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <h2>FileClean AI</h2>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item">
+                    <a href="#home" class="nav-link">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#about" class="nav-link">About</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#features" class="nav-link">Features</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#demo" class="nav-link">Demo</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#workflow" class="nav-link">Workflow</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#contact" class="nav-link">Contact</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-container">
+            <h1 class="hero-title">Automating File Cleansing and Analysis leveraging AI</h1>
+            <p class="hero-subtitle">Clean, Standardize, and Analyze Files Automatically</p>
+            <a href="#demo" class="btn btn-primary">Get Started</a>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about">
+        <div class="container">
+            <h2 class="section-title">About Our Solution</h2>
+            <div class="about-content">
+                <div class="about-text">
+                    <h3>Background</h3>
+                    <p>Security consultants receive client data in multiple formats (PDF, PNG, JPEG, PPTX, XLSX, TXT) containing sensitive information such as:</p>
+                    <ul>
+                        <li>Personally Identifiable Information (PII)</li>
+                        <li>Client names and company logos</li>
+                        <li>Network configurations and credentials</li>
+                        <li>Internal policies and procedures</li>
+                    </ul>
+                    <p>This data needs to be cleansed before analysis to protect client privacy and comply with data protection regulations.</p>
+                </div>
+                <div class="about-text">
+                    <h3>Our Solution</h3>
+                    <p>We provide an automated solution that:</p>
+                    <ul>
+                        <li><strong>The Cleaner:</strong> Removes PII, logos, and client-specific information while preserving file format</li>
+                        <li><strong>The Analyzer:</strong> Extracts technical security information automatically</li>
+                        <li>Standardizes data into a consistent, usable structure</li>
+                        <li>Prepares anonymized data ready for analysis</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🧹</div>
+                    <h3>Format-Preserving Cleansing</h3>
+                    <p>Cleanse sensitive data while maintaining original file format (PDF, PNG, JPG, etc.)</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <h3>Transfer to Analyzer</h3>
+                    <p>One-click transfer of cleansed files to the analysis engine</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Security Analysis</h3>
+                    <p>Extract IAM policies, firewall rules, IDS/IPS logs, and other security configurations</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Structured Output</h3>
+                    <p>Provide anonymized, structured text ready for analysis and reporting</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <h2 class="section-title">File Upload Demo</h2>
+            <div class="upload-container">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="file-upload-wrapper">
+                        <input type="file" id="fileInput" name="files[]" multiple accept=".pdf,.png,.jpg,.jpeg,.pptx,.xlsx,.txt,.docx">
+                        <label for="fileInput" class="file-upload-label">
+                            <span>Choose Files</span>
+                            <small>Supported formats: PDF, PNG, JPG, JPEG, PPTX, XLSX, TXT, DOCX</small>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Process Files</button>
+                </form>
+                <div id="results" class="results-container"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Workflow Section -->
+    <section id="workflow" class="workflow">
+        <div class="container">
+            <h2 class="section-title">Our Workflow</h2>
+            <div class="workflow-container">
+                <div class="workflow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Upload</h3>
+                        <p>Upload files in various formats (PDF, PNG, JPEG, PPTX, XLSX, TXT, DOCX)</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Cleansing</h3>
+                        <p>Automatically remove sensitive information while preserving file format</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Transfer</h3>
+                        <p>Transfer cleansed files to analyzer with one click</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Analysis</h3>
+                        <p>Extract technical security information from cleansed files</p>
+                    </div>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Output</h3>
+                        <p>Receive structured text output ready for further analysis</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="container">
+            <h2 class="section-title">Contact Us</h2>
+            <div class="contact-container">
+                <div class="contact-info">
+                    <h3>Get In Touch</h3>
+                    <p>Have questions about our file cleansing solution? Reach out to us!</p>
+                    <div class="contact-details">
+                        <p>📧 Email: info@filecleanai.com</p>
+                        <p>📍 Location: San Francisco, CA</p>
+                    </div>
+                </div>
+                <div class="contact-form">
+                    <form id="contactForm">
+                        <div class="form-group">
+                            <input type="text" id="name" name="name" placeholder="Your Name" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="email" id="email" name="email" placeholder="Your Email" required>
+                        </div>
+                        <div class="form-group">
+                            <textarea id="message" name="message" placeholder="Your Message" rows="5" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Send Message</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2023 FileClean AI. Automating File Cleansing and Analysis leveraging AI. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

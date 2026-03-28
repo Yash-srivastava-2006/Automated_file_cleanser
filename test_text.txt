@@ -1,0 +1,20 @@
+CONFIDENTIAL DOCUMENT
+
+Client Information:
+- Client Name: Global Tech Solutions
+- Contact Email: info@globaltech.com
+- Phone Number: 555-987-6543
+- SSN: 987-65-4321
+
+Technical Details:
+- Server IP: 10.0.0.25
+- MAC Address: AA:BB:CC:DD:EE:FF
+- Password Policy: Minimum 16 characters with special chars
+- Firewall Rule: Deny TCP 22 from 0.0.0.0/0
+
+Personal Information:
+- Address: 456 Oak Avenue, Springfield, IL 62701
+- Passport: G98765432
+- Driver License: IL123456789
+
+This document contains sensitive information about Global Tech Solutions.

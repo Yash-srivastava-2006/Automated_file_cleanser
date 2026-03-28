@@ -1,0 +1,5 @@
+Original filename: IMG_20250925_163631.jpg
+Cleansed filename: redacted_1b68f9e3-aba8-4a78-b6da-19f4a16431e7_IMG_20250925_163631.jpg
+File type: jpg
+Status: File cleansed and ready for analysis
+Cleansing: COMPLETED

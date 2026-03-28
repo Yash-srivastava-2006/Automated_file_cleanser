@@ -1,0 +1,28 @@
+CONFIDENTIAL DOCUMENT - ACME CORPORATION
+
+CLIENT INFORMATION:
+- Client Name: Acme Corporation
+- Contact Person: John Smith
+- Email: john.smith@acmecorp.com
+- Phone: 555-123-4567
+- SSN: 123-45-6789
+
+TECHNICAL DETAILS:
+- Server IP Address: 192.168.1.100
+- MAC Address: 00:1A:2B:3C:4D:5E
+- Password Policy: Minimum 12 characters with special chars
+- Firewall Rule: Allow TCP 443 from 10.0.0.0/8
+
+PERSONAL INFORMATION:
+- Home Address: 123 Main Street, Anytown, CA 90210
+- Passport Number: P12345678
+- Driver License: CA123456789
+- Birth Date: 12/25/1980
+
+NETWORK CONFIGURATION:
+- Internal IP: 10.0.0.25
+- External IP: 203.0.113.45
+- Subnet Mask: 255.255.255.0
+
+This document contains confidential information about Acme Corporation.
+Company Confidential - Do Not Distribute

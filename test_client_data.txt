@@ -1,0 +1,20 @@
+CONFIDENTIAL - CLIENT DOCUMENT
+
+Client Information:
+- Client Name: Acme Corporation
+- Contact: John Smith (john.smith@acmecorp.com)
+- Phone: 555-123-4567
+- SSN: 123-45-6789
+
+Technical Details:
+- Server IP: 192.168.1.100
+- MAC: 00:1A:2B:3C:4D:5E
+- Policy: Complex passwords required (min 12 chars)
+- Rule: Allow HTTPS from 10.0.0.0/8
+
+Personal Data:
+- Address: 123 Main Street, Anytown, CA 90210
+- Passport: P12345678
+- Driver License: CA123456789
+
+This document contains confidential information about Acme Corporation.

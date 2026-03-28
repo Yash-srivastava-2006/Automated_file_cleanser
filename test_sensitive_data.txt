@@ -1,0 +1,20 @@
+CONFIDENTIAL DOCUMENT
+
+Client: Global Tech Solutions
+Contact: Sarah Johnson (sarah.johnson@globaltech.com)
+Phone: 555-987-6543
+SSN: 987-65-4321
+
+Technical Information:
+- Server IP: 10.0.0.25
+- MAC Address: AA:BB:CC:DD:EE:FF
+- Password Policy: Minimum 12 characters with special characters
+- Firewall Rule: Allow TCP 443 from 192.168.1.0/24
+- Vulnerability: CVE-2023-99999
+
+Personal Information:
+- Address: 456 Oak Avenue, Springfield, IL 62701
+- Passport: G98765432
+- Driver License: IL123456789
+
+This document contains sensitive information about Global Tech Solutions.
