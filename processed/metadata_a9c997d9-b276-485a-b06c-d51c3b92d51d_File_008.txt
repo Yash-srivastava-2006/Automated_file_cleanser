@@ -1,5 +1,0 @@
-Original filename: File_008.xlsx
-Cleansed filename: redacted_a9c997d9-b276-485a-b06c-d51c3b92d51d_File_008.xlsx
-File type: xlsx
-Status: File cleansed and ready for analysis
-Cleansing: COMPLETED
